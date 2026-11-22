@@ -11,7 +11,6 @@ import type {
   WorkerResponse,
 } from './types';
 
-import './style.css';
 
 registerSW({ immediate: true });
 
