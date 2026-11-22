@@ -209,7 +209,7 @@ function handleCrash(detail: string): void {
   setModelState('error');
   el.progressLabel.hidden = false;
   el.progressLabel.textContent = `The background worker stopped (${detail || 'it may have run out of memory'}). Close other tabs and tap Retry.`;
-  setRunStatus('');
+  setRunStatus(`The background worker stopped: ${detail || 'unknown worker error'}. Tap Retry download to try again.`, 'error');
   refreshCompressButton();
   recount();
 }
@@ -247,7 +247,7 @@ function handleMessage(msg: WorkerResponse): void {
         pendingCompress = false;
         runCompression();
       } else {
-        setRunStatus(`Model ready on ${msg.device === 'webgpu' ? 'WebGPU' : 'WebAssembly'}.`);
+        setRunStatus(`Model ready on ${msg.device === 'webgpu' ? 'WebGPU' : 'WebAssembly'}. Enter a prompt and tap Compress prompt.`, 'success');
       }
       break;
     }
@@ -263,7 +263,7 @@ function handleMessage(msg: WorkerResponse): void {
       if (msg.id !== latestCompressId) break;
       busy = false;
       showResult(msg.output, msg.diff, msg.stats);
-      setRunStatus('Done.');
+      setRunStatus('Compression complete. Your shortened prompt is ready below.', 'success');
       refreshCompressButton();
       break;
     }
@@ -273,10 +273,11 @@ function handleMessage(msg: WorkerResponse): void {
         setModelState('error');
         el.progressLabel.hidden = false;
         el.progressLabel.textContent = `Could not load the model: ${msg.message}`;
+        setRunStatus(`Model initialization failed: ${msg.message}`, 'error');
       } else if (msg.scope === 'compress') {
         if (msg.id !== latestCompressId) break;
         busy = false;
-        setRunStatus(`Compression failed: ${msg.message}`);
+        setRunStatus(`Compression failed: ${msg.message}`, 'error');
         refreshCompressButton();
       }
       break;
@@ -325,9 +326,10 @@ function initModel(): void {
     const detail = error instanceof Error ? error.message : String(error);
     el.progressLabel.hidden = false;
     el.progressLabel.textContent = `Could not start the background worker: ${detail}`;
-    setRunStatus('This browser could not start the model worker. Reload the app and try again.');
+    setRunStatus(`Could not initialize the model: ${detail}`, 'error');
     return;
   }
+  setRunStatus(modelCached ? 'Loading the model stored on this device…' : 'Starting the model download. This may take several minutes.');
   setModelState(modelCached ? 'loading' : 'downloading');
   el.progressBar.style.width = '0%';
   el.progressLabel.hidden = false;
@@ -358,7 +360,7 @@ async function clearModel(): Promise<void> {
   busy = false;
   pendingCompress = false;
   setModelState('idle');
-  setRunStatus('Model removed.');
+  setRunStatus('Downloaded model removed from this device.', 'success');
   void refreshStorage();
   recount();
 }
@@ -397,8 +399,9 @@ function recount(): void {
 
 /* ------------------------------------ Compression ------------------------------------ */
 
-function setRunStatus(text: string): void {
+function setRunStatus(text: string, tone: 'info' | 'success' | 'error' = 'info'): void {
   el.runStatus.textContent = text;
+  el.runStatus.dataset.state = text ? tone : '';
 }
 
 function refreshCompressButton(): void {
@@ -409,14 +412,16 @@ function refreshCompressButton(): void {
 function startCompression(): void {
   if (busy) return;
   if (!el.input.value.trim()) {
-    setRunStatus('Paste a prompt first.');
+    setRunStatus('Nothing to compress. Paste or type a prompt in the Prompt box first.', 'error');
     el.input.focus();
     return;
   }
   switch (modelState) {
     case 'idle':
     case 'error':
-      setRunStatus('Download the offline model first. It is a one-time download of about 180 MB.');
+      setRunStatus(modelState === 'error'
+        ? 'The model is unavailable. Tap Retry download above, wait for “Offline ready,” then compress.'
+        : 'The model has not been initialized. Tap Initialize / Download Offline Model above first.', 'error');
       el.modelCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     case 'downloading':
@@ -438,9 +443,17 @@ function runCompression(): void {
   busy = true;
   hasResult = false;
   latestCompressId = ++sequence;
-  setRunStatus('Compressing…');
+  setRunStatus('Compression started. Processing your prompt on this device…');
   refreshCompressButton();
-  send({ type: 'compress', id: latestCompressId, text: el.input.value, settings: toCompressionSettings(readSettings()) });
+  try {
+    if (!worker) throw new Error('The model worker is unavailable. Tap Initialize / Download Offline Model to retry.');
+    send({ type: 'compress', id: latestCompressId, text: el.input.value, settings: toCompressionSettings(readSettings()) });
+  } catch (error) {
+    busy = false;
+    const detail = error instanceof Error ? error.message : String(error);
+    setRunStatus(`Could not start compression: ${detail}`, 'error');
+    refreshCompressButton();
+  }
 }
 
 function showResult(output: string, diff: DiffPart[], stats: CompressionStats): void {
@@ -664,7 +677,7 @@ async function boot(): Promise<void> {
     const detail = error instanceof Error ? error.message : String(error);
     el.progressLabel.hidden = false;
     el.progressLabel.textContent = `Could not start the background worker: ${detail}`;
-    setRunStatus('The model worker could not start. Tap Initialize to retry.');
+    setRunStatus('The model worker could not start. Tap Initialize / Download Offline Model to retry.', 'error');
   }
   modelCached = await detectCachedModel();
   if (modelState !== 'error') setModelState(modelCached ? 'cached' : 'idle');
@@ -673,5 +686,5 @@ async function boot(): Promise<void> {
 
 void boot().catch((error: unknown) => {
   const detail = error instanceof Error ? error.message : String(error);
-  setRunStatus(`Startup failed: ${detail}`);
+  setRunStatus(`App startup failed: ${detail}`, 'error');
 });

@@ -555,7 +555,26 @@ input[type='range'] {
 }
 
 .actionbar .small {
+  min-height: 0;
   text-align: center;
+}
+
+.actionbar .small:not(:empty) {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.actionbar .small[data-state='success'] {
+  border-color: var(--keep);
+  background: var(--keep-soft);
+}
+
+.actionbar .small[data-state='error'] {
+  border-color: var(--cut);
+  background: var(--cut-soft);
 }
 
 @media (min-width: 720px) {
