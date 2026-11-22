@@ -100,7 +100,7 @@ function loadSettings(): Settings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    const reduction = Number(parsed.reduction);
+    const reduction = typeof parsed.reduction === 'number' ? parsed.reduction : Number.NaN;
     return {
       reduction: Number.isFinite(reduction)
         ? Math.min(80, Math.max(10, reduction))
