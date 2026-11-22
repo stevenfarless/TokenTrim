@@ -56,16 +56,16 @@ if (onnxWasm) {
   onnxWasm.proxy = false;
 }
 
-let wasmPathsConfigured = false;
-/** Must run once, before the first ONNX session is created. */
+let wasmPathsDevice: ComputeDevice | null = null;
+/** Configure the matching runtime files before creating a session, including after a device fallback. */
 function configureWasmPaths(device: ComputeDevice): void {
-  if (wasmPathsConfigured || !onnxWasm) return;
+  if (wasmPathsDevice === device || !onnxWasm) return;
   const abs = (url: string): string => new URL(url, ctx.location.href).href;
   onnxWasm.wasmPaths =
     device === 'webgpu'
       ? { mjs: abs(wasmGpuGlueUrl), wasm: abs(wasmGpuUrl) }
       : { mjs: abs(wasmPlainGlueUrl), wasm: abs(wasmPlainUrl) };
-  wasmPathsConfigured = true;
+  wasmPathsDevice = device;
 }
 
 /* ---------------------------------- Tokenizers ---------------------------------- */
@@ -237,10 +237,19 @@ async function compress(id: number, text: string, settings: CompressionSettings)
 
   // Stage 1: clean and protect.
   const cleaned = cleanWhitespace(text);
-  const { text: shielded, segments } = settings.protect
-    ? protectSegments(cleaned, { minifyJson: settings.minifyJson })
-    : { text: cleaned, segments: [] as string[] };
-  const pieces = splitPieces(shielded);
+  let shielded = cleaned;
+  let segments: string[] = [];
+  let pieces;
+  let placeholderPrefix = '';
+  if (settings.protect) {
+    const protectedResult = protectSegments(cleaned, { minifyJson: settings.minifyJson });
+    shielded = protectedResult.text;
+    segments = protectedResult.segments;
+    placeholderPrefix = protectedResult.placeholderPrefix;
+    pieces = splitPieces(shielded, placeholderPrefix);
+  } else {
+    pieces = [{ kind: 'prose' as const, text: cleaned }];
+  }
   const jobs = pieces.filter((p) => p.kind === 'prose' && wordCount(p.text) >= MIN_WORDS_TO_COMPRESS).length;
 
   // Stage 2: semantic pruning of every prose piece.
@@ -264,7 +273,7 @@ async function compress(id: number, text: string, settings: CompressionSettings)
     post({ type: 'chunk-progress', id, done: ++done, total: jobs });
   }
 
-  const finalText = restoreSegments(output, segments).trim();
+  const finalText = restoreSegments(output, segments, placeholderPrefix).trim();
   const afterTokens = countTokens(encoder, finalText);
   const savedTokens = beforeTokens - afterTokens;
   const stats: CompressionStats = {
@@ -282,7 +291,7 @@ async function compress(id: number, text: string, settings: CompressionSettings)
     type: 'compressed',
     id,
     output: finalText,
-    diff: buildDiff(restoreSegments(shielded, segments), finalText),
+    diff: buildDiff(restoreSegments(shielded, segments, placeholderPrefix), finalText),
     stats,
   });
 }
