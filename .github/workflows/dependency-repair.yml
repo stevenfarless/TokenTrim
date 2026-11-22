@@ -1,6 +1,8 @@
 name: Regenerate dependency lockfile
 
 on:
+  push:
+    branches: [fix/workbox-security-dependencies]
   pull_request:
     branches: [main]
 
@@ -13,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -27,7 +29,7 @@ jobs:
           if ! git diff --quiet -- package-lock.json; then
             git add package-lock.json
             git commit -m "chore: regenerate patched dependency lockfile"
-            git push origin HEAD:${{ github.head_ref }}
+            git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
           fi
       - name: Install exact lockfile
         run: npm ci
