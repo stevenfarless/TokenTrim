@@ -239,7 +239,7 @@ async function compress(id: number, text: string, settings: CompressionSettings)
   const cleaned = cleanWhitespace(text);
   let shielded = cleaned;
   let segments: string[] = [];
-  let pieces;
+  let pieces: ReturnType<typeof splitPieces>;
   let placeholderPrefix = '';
   if (settings.protect) {
     const protectedResult = protectSegments(cleaned, { minifyJson: settings.minifyJson });
