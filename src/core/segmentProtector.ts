@@ -42,10 +42,6 @@ function placeholder(index: number, prefix: string): string {
   return `${prefix}${index}__`;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
-}
-
 function tryMinifyJson(source: string): string | null {
   try {
     return JSON.stringify(JSON.parse(source));
@@ -141,7 +137,7 @@ export function protectSegments(input: string, options: ProtectOptions): Protect
 /** Splits text at placeholders into alternating prose and protected pieces. */
 export function splitPieces(text: string, placeholderPrefix: string): Piece[] {
   const pieces: Piece[] = [];
-  const re = new RegExp(`${escapeRegExp(placeholderPrefix)}(\\d+)__`, 'g');
+  const re = new RegExp(`${placeholderPrefix}(\\d+)__`, 'g');
   let last = 0;
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     if (m.index > last) pieces.push({ kind: 'prose', text: text.slice(last, m.index) });
