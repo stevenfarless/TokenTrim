@@ -274,6 +274,8 @@ function handleMessage(msg: WorkerResponse): void {
         el.progressLabel.hidden = false;
         el.progressLabel.textContent = `Could not load the model: ${msg.message}`;
         setRunStatus(`Model initialization failed: ${msg.message}`, 'error');
+      } else if (msg.scope === 'count') {
+        if (msg.id === latestCountId) el.before.textContent = 'Unavailable';
       } else if (msg.scope === 'compress') {
         if (msg.id !== latestCompressId) break;
         busy = false;
@@ -440,8 +442,10 @@ function startCompression(): void {
 }
 
 function runCompression(): void {
+  // Remove any previous output before starting so a failed run cannot leave stale
+  // results available to copy as though they came from this attempt.
+  clearResult();
   busy = true;
-  hasResult = false;
   latestCompressId = ++sequence;
   setRunStatus('Compression started. Processing your prompt on this device…');
   refreshCompressButton();
@@ -680,7 +684,9 @@ async function boot(): Promise<void> {
     setRunStatus('The model worker could not start. Tap Initialize / Download Offline Model to retry.', 'error');
   }
   modelCached = await detectCachedModel();
-  if (modelState !== 'error') setModelState(modelCached ? 'cached' : 'idle');
+  // Cache detection is asynchronous. Do not overwrite a state entered after the
+  // interface was wired (for example, if the user initialized immediately).
+  if (modelState === 'idle') setModelState(modelCached ? 'cached' : 'idle');
   await refreshStorage();
 }
 
