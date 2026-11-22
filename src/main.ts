@@ -174,7 +174,7 @@ function syncControls(): void {
 
 type ModelState = 'idle' | 'cached' | 'downloading' | 'loading' | 'ready' | 'error';
 
-let worker: Worker;
+let worker: Worker | null = null;
 let modelState: ModelState = 'idle';
 let modelCached = false;
 let busy = false;
@@ -188,6 +188,7 @@ let countTimer = 0;
 let copyTimer = 0;
 
 function send(request: WorkerRequest): void {
+  if (!worker) throw new Error('The background worker is unavailable. Tap Initialize to retry.');
   worker.postMessage(request);
 }
 
@@ -200,8 +201,8 @@ function createWorker(): Worker {
 }
 
 function handleCrash(detail: string): void {
-  worker.terminate();
-  worker = createWorker();
+  worker?.terminate();
+  worker = null;
   busy = false;
   pendingCompress = false;
   setModelState('error');
@@ -316,6 +317,16 @@ function setModelState(next: ModelState): void {
 
 function initModel(): void {
   if (modelState === 'downloading' || modelState === 'loading' || modelState === 'ready') return;
+  try {
+    worker ??= createWorker();
+  } catch (error) {
+    setModelState('error');
+    const detail = error instanceof Error ? error.message : String(error);
+    el.progressLabel.hidden = false;
+    el.progressLabel.textContent = `Could not start the background worker: ${detail}`;
+    setRunStatus('This browser could not start the model worker. Reload the app and try again.');
+    return;
+  }
   setModelState(modelCached ? 'loading' : 'downloading');
   el.progressBar.style.width = '0%';
   el.progressLabel.hidden = false;
@@ -335,13 +346,13 @@ async function detectCachedModel(): Promise<boolean> {
 
 async function clearModel(): Promise<void> {
   if (!window.confirm('Remove the downloaded model (about 180 MB)? You will need to download it again to compress offline.')) return;
-  worker.terminate(); // frees the model memory immediately
+  worker?.terminate(); // frees the model memory immediately
   try {
     await caches.delete(MODEL_CACHE_NAME);
   } catch {
     /* ignore */
   }
-  worker = createWorker();
+  worker = null;
   modelCached = false;
   busy = false;
   pendingCompress = false;
@@ -640,13 +651,26 @@ function wire(): void {
 }
 
 async function boot(): Promise<void> {
-  worker = createWorker();
+  // Wire the interface before starting the worker. A worker startup failure must not
+  // leave every button inert with no explanation.
   applySettings(loadSettings());
   wire();
   recount();
+  try {
+    worker = createWorker();
+  } catch (error) {
+    setModelState('error');
+    const detail = error instanceof Error ? error.message : String(error);
+    el.progressLabel.hidden = false;
+    el.progressLabel.textContent = `Could not start the background worker: ${detail}`;
+    setRunStatus('The model worker could not start. Tap Initialize to retry.');
+  }
   modelCached = await detectCachedModel();
-  setModelState(modelCached ? 'cached' : 'idle');
+  if (modelState !== 'error') setModelState(modelCached ? 'cached' : 'idle');
   await refreshStorage();
 }
 
-void boot();
+void boot().catch((error: unknown) => {
+  const detail = error instanceof Error ? error.message : String(error);
+  setRunStatus(`Startup failed: ${detail}`);
+});
