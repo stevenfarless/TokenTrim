@@ -188,8 +188,9 @@ let countTimer = 0;
 let copyTimer = 0;
 
 function send(request: WorkerRequest): void {
-  if (!worker) throw new Error('The background worker is unavailable. Tap Initialize to retry.');
-  worker.postMessage(request);
+  // Counting can be requested before worker startup finishes; safely skip it until
+  // Initialize creates a worker rather than throwing from an input debounce.
+  worker?.postMessage(request);
 }
 
 function createWorker(): Worker {
