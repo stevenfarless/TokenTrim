@@ -17,6 +17,8 @@ export interface ProtectResult {
   text: string;
   /** Original (or minified) text of each protected segment, indexed by placeholder number. */
   segments: string[];
+  /** Collision-free marker prefix used to identify protected segments. */
+  placeholderPrefix: string;
 }
 
 export interface Piece {
@@ -24,7 +26,7 @@ export interface Piece {
   text: string;
 }
 
-const PLACEHOLDER_SOURCE = '__SEG_(\\d+)__';
+const PLACEHOLDER_BASE = '__TOKENTRIM_SEGMENT_';
 const MIN_JSON_LENGTH = 6;
 
 /** Normalises line endings, strips trailing whitespace and collapses runs of blank lines. */
@@ -36,8 +38,8 @@ export function cleanWhitespace(input: string): string {
     .trim();
 }
 
-function placeholder(index: number): string {
-  return `__SEG_${index}__`;
+function placeholder(index: number, prefix: string): string {
+  return `${prefix}${index}__`;
 }
 
 function tryMinifyJson(source: string): string | null {
@@ -103,9 +105,11 @@ function protectJson(text: string, push: (segment: string) => string, minify: bo
 
 export function protectSegments(input: string, options: ProtectOptions): ProtectResult {
   const segments: string[] = [];
+  let placeholderPrefix = PLACEHOLDER_BASE;
+  while (input.includes(placeholderPrefix)) placeholderPrefix = `_${placeholderPrefix}`;
   const push = (segment: string): string => {
     segments.push(segment);
-    return placeholder(segments.length - 1);
+    return placeholder(segments.length - 1, placeholderPrefix);
   };
 
   // 1. Fenced code blocks. ```json fences are minified when requested and valid.
@@ -127,13 +131,13 @@ export function protectSegments(input: string, options: ProtectOptions): Protect
   //    <context> and </context> is still compressed.
   text = text.replace(/<\/?[A-Za-z][\w:.-]*(?:\s+[^<>]*?)?\/?>/g, (match) => push(match));
 
-  return { text, segments };
+  return { text, segments, placeholderPrefix };
 }
 
 /** Splits text at placeholders into alternating prose and protected pieces. */
-export function splitPieces(text: string): Piece[] {
+export function splitPieces(text: string, placeholderPrefix: string): Piece[] {
   const pieces: Piece[] = [];
-  const re = new RegExp(PLACEHOLDER_SOURCE, 'g');
+  const re = new RegExp(`${placeholderPrefix}(\\d+)__`, 'g');
   let last = 0;
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     if (m.index > last) pieces.push({ kind: 'prose', text: text.slice(last, m.index) });
@@ -145,7 +149,8 @@ export function splitPieces(text: string): Piece[] {
 }
 
 /** Puts the original segments back in place of their placeholders. */
-export function restoreSegments(text: string, segments: readonly string[]): string {
+export function restoreSegments(text: string, segments: readonly string[], placeholderPrefix: string): string {
   if (segments.length === 0) return text;
-  return text.replace(new RegExp(PLACEHOLDER_SOURCE, 'g'), (match, index: string) => segments[Number(index)] ?? match);
+  const re = new RegExp(`${placeholderPrefix}(\\d+)__`, 'g');
+  return text.replace(re, (match, index: string) => segments[Number(index)] ?? match);
 }

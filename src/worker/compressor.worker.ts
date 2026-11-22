@@ -56,16 +56,16 @@ if (onnxWasm) {
   onnxWasm.proxy = false;
 }
 
-let wasmPathsConfigured = false;
-/** Must run once, before the first ONNX session is created. */
+let wasmPathsDevice: ComputeDevice | null = null;
+/** Configure the matching runtime files before creating a session, including after a device fallback. */
 function configureWasmPaths(device: ComputeDevice): void {
-  if (wasmPathsConfigured || !onnxWasm) return;
+  if (wasmPathsDevice === device || !onnxWasm) return;
   const abs = (url: string): string => new URL(url, ctx.location.href).href;
   onnxWasm.wasmPaths =
     device === 'webgpu'
       ? { mjs: abs(wasmGpuGlueUrl), wasm: abs(wasmGpuUrl) }
       : { mjs: abs(wasmPlainGlueUrl), wasm: abs(wasmPlainUrl) };
-  wasmPathsConfigured = true;
+  wasmPathsDevice = device;
 }
 
 /* ---------------------------------- Tokenizers ---------------------------------- */
@@ -236,11 +236,20 @@ async function compress(id: number, text: string, settings: CompressionSettings)
   const beforeTokens = countTokens(encoder, text);
 
   // Stage 1: clean and protect.
-  const cleaned = cleanWhitespace(text);
-  const { text: shielded, segments } = settings.protect
-    ? protectSegments(cleaned, { minifyJson: settings.minifyJson })
-    : { text: cleaned, segments: [] as string[] };
-  const pieces = splitPieces(shielded);
+  let shielded = text;
+  let segments: string[] = [];
+  let pieces: ReturnType<typeof splitPieces>;
+  let placeholderPrefix = '';
+  if (settings.protect) {
+    const protectedResult = protectSegments(text, { minifyJson: settings.minifyJson });
+    shielded = protectedResult.text;
+    segments = protectedResult.segments;
+    placeholderPrefix = protectedResult.placeholderPrefix;
+    pieces = splitPieces(shielded, placeholderPrefix);
+  } else {
+    shielded = cleanWhitespace(text);
+    pieces = [{ kind: 'prose' as const, text: shielded }];
+  }
   const jobs = pieces.filter((p) => p.kind === 'prose' && wordCount(p.text) >= MIN_WORDS_TO_COMPRESS).length;
 
   // Stage 2: semantic pruning of every prose piece.
@@ -248,13 +257,18 @@ async function compress(id: number, text: string, settings: CompressionSettings)
   let done = 0;
   let output = '';
   for (const piece of pieces) {
-    if (piece.kind === 'protected' || wordCount(piece.text) < MIN_WORDS_TO_COMPRESS) {
+    if (piece.kind === 'protected') {
       output += piece.text;
       continue;
     }
     const lead = /^\s*/.exec(piece.text)?.[0] ?? '';
     const trail = /\s*$/.exec(piece.text)?.[0] ?? '';
-    const pruned = await loaded.promptCompressor.compress(piece.text.trim(), {
+    const prose = settings.protect ? cleanWhitespace(piece.text) : piece.text;
+    if (wordCount(prose) < MIN_WORDS_TO_COMPRESS) {
+      output += piece.text;
+      continue;
+    }
+    const pruned = await loaded.promptCompressor.compress(prose.trim(), {
       rate: settings.keepRatio,
       tokenToWord: 'mean',
       forceTokens,
@@ -264,7 +278,7 @@ async function compress(id: number, text: string, settings: CompressionSettings)
     post({ type: 'chunk-progress', id, done: ++done, total: jobs });
   }
 
-  const finalText = restoreSegments(output, segments).trim();
+  const finalText = restoreSegments(output, segments, placeholderPrefix).trim();
   const afterTokens = countTokens(encoder, finalText);
   const savedTokens = beforeTokens - afterTokens;
   const stats: CompressionStats = {
@@ -282,7 +296,7 @@ async function compress(id: number, text: string, settings: CompressionSettings)
     type: 'compressed',
     id,
     output: finalText,
-    diff: buildDiff(restoreSegments(shielded, segments), finalText),
+    diff: buildDiff(restoreSegments(shielded, segments, placeholderPrefix), finalText),
     stats,
   });
 }
