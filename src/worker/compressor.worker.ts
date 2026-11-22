@@ -236,19 +236,19 @@ async function compress(id: number, text: string, settings: CompressionSettings)
   const beforeTokens = countTokens(encoder, text);
 
   // Stage 1: clean and protect.
-  const cleaned = cleanWhitespace(text);
-  let shielded = cleaned;
+  let shielded = text;
   let segments: string[] = [];
   let pieces: ReturnType<typeof splitPieces>;
   let placeholderPrefix = '';
   if (settings.protect) {
-    const protectedResult = protectSegments(cleaned, { minifyJson: settings.minifyJson });
+    const protectedResult = protectSegments(text, { minifyJson: settings.minifyJson });
     shielded = protectedResult.text;
     segments = protectedResult.segments;
     placeholderPrefix = protectedResult.placeholderPrefix;
     pieces = splitPieces(shielded, placeholderPrefix);
   } else {
-    pieces = [{ kind: 'prose' as const, text: cleaned }];
+    shielded = cleanWhitespace(text);
+    pieces = [{ kind: 'prose' as const, text: shielded }];
   }
   const jobs = pieces.filter((p) => p.kind === 'prose' && wordCount(p.text) >= MIN_WORDS_TO_COMPRESS).length;
 
@@ -257,13 +257,18 @@ async function compress(id: number, text: string, settings: CompressionSettings)
   let done = 0;
   let output = '';
   for (const piece of pieces) {
-    if (piece.kind === 'protected' || wordCount(piece.text) < MIN_WORDS_TO_COMPRESS) {
+    if (piece.kind === 'protected') {
       output += piece.text;
       continue;
     }
     const lead = /^\s*/.exec(piece.text)?.[0] ?? '';
     const trail = /\s*$/.exec(piece.text)?.[0] ?? '';
-    const pruned = await loaded.promptCompressor.compress(piece.text.trim(), {
+    const prose = settings.protect ? cleanWhitespace(piece.text) : piece.text;
+    if (wordCount(prose) < MIN_WORDS_TO_COMPRESS) {
+      output += piece.text;
+      continue;
+    }
+    const pruned = await loaded.promptCompressor.compress(prose.trim(), {
       rate: settings.keepRatio,
       tokenToWord: 'mean',
       forceTokens,
