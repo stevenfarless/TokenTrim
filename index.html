@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>TokenTrim: offline prompt compressor</title>
+    <meta name="description" content="Compress long LLM prompts into fewer tokens. Runs entirely in your browser, works offline." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d1218" media="(prefers-color-scheme: dark)" />
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TokenTrim" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="brand">
+          <h1>TokenTrim</h1>
+          <span id="status-pill" class="pill" data-state="idle" role="status">Model not loaded</span>
+        </div>
+        <button id="model-btn" class="btn btn-quiet" type="button">Download model</button>
+      </header>
+
+      <aside id="install-banner" class="banner" hidden>
+        <p>
+          <strong>Keep the model on your iPhone.</strong> Tap <em>Share</em>, then <em>Add to Home Screen</em>.
+          Safari deletes website data after 7 days without a visit, but not for apps on the Home Screen.
+        </p>
+        <button id="install-dismiss" class="btn btn-quiet" type="button" aria-label="Dismiss install tip">Got it</button>
+      </aside>
+
+      <section id="model-card" class="panel model" aria-live="polite">
+        <p id="model-text">
+          TokenTrim runs a small language model on your device. Download it once (about 180 MB) and it works offline,
+          even in Airplane Mode. Your prompts never leave this device.
+        </p>
+        <button id="init-btn" class="btn btn-primary" type="button">Initialize / Download Offline Model (~180 MB)</button>
+        <div id="progress" class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+          <div id="progress-bar"></div>
+        </div>
+        <p id="progress-label" class="small" hidden></p>
+        <p id="storage-text" class="small"></p>
+      </section>
+
+      <main class="workspace">
+        <section class="panel pane pane-input" aria-labelledby="input-title">
+          <div class="pane-head">
+            <h2 id="input-title">Prompt</h2>
+            <div class="pane-actions">
+              <button id="paste-btn" class="btn btn-small" type="button">Paste</button>
+              <button id="sample-btn" class="btn btn-small" type="button">Sample</button>
+              <button id="clear-btn" class="btn btn-small" type="button">Clear</button>
+            </div>
+          </div>
+          <textarea id="input" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"
+            placeholder="Paste a long prompt here"></textarea>
+          <p id="input-meta" class="small">0 characters</p>
+        </section>
+
+        <section class="panel controls" aria-labelledby="controls-title">
+          <h2 id="controls-title" class="sr-only">Compression settings</h2>
+          <div class="field">
+            <div class="field-head">
+              <label for="reduction">Target reduction</label>
+              <output id="reduction-out" for="reduction">50%</output>
+            </div>
+            <input id="reduction" type="range" min="10" max="80" step="5" value="50" />
+            <div class="chips" role="group" aria-label="Presets">
+              <button class="chip" type="button" data-reduction="25">Light 25%</button>
+              <button class="chip" type="button" data-reduction="50">Balanced 50%</button>
+              <button class="chip" type="button" data-reduction="70">Aggressive 70%</button>
+            </div>
+            <p id="keep-hint" class="small">Keeps about 50% of the words the model rates as important.</p>
+          </div>
+
+          <div class="field">
+            <label for="encoding">Tokenizer used for counts</label>
+            <select id="encoding">
+              <option value="o200k_base">o200k_base (GPT-4o, o1, o3)</option>
+              <option value="cl100k_base">cl100k_base (GPT-4, Claude approx.)</option>
+            </select>
+          </div>
+
+          <div class="switches">
+            <label class="switch"><input id="protect" type="checkbox" checked /><span>Protect code, XML and JSON</span></label>
+            <label class="switch"><input id="minify" type="checkbox" checked /><span>Minify JSON</span></label>
+            <label class="switch"><input id="diff" type="checkbox" /><span>Diff view</span></label>
+          </div>
+
+          <details class="advanced">
+            <summary>Always keep these tokens</summary>
+            <label class="sr-only" for="force-keep">Comma-separated tokens that are never removed</label>
+            <input id="force-keep" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="\n, ., ?, !" />
+            <p class="small">Comma-separated. Use \n for line breaks. Add product names or keywords that must survive.</p>
+          </details>
+        </section>
+
+        <section class="panel metrics" aria-labelledby="metrics-title">
+          <h2 id="metrics-title" class="sr-only">Token metrics</h2>
+          <div class="stats">
+            <div class="stat"><span class="stat-label">Before tokens</span><span id="m-before" class="stat-value">0</span></div>
+            <div class="stat"><span class="stat-label">After tokens</span><span id="m-after" class="stat-value">-</span></div>
+            <div class="stat stat-saved">
+              <span class="stat-label">Tokens saved</span>
+              <span class="stat-row"><span id="m-saved" class="stat-value">-</span><span id="m-badge" class="badge" hidden></span></span>
+            </div>
+            <div class="stat"><span class="stat-label">Processing time</span><span id="m-time" class="stat-value">-</span></div>
+          </div>
+          <div class="trim" aria-hidden="true"><span id="trim-kept"></span></div>
+          <p id="trim-caption" class="small">Run a compression to see how much was trimmed.</p>
+        </section>
+
+        <section class="panel pane pane-output" aria-labelledby="output-title">
+          <div class="pane-head">
+            <h2 id="output-title">Compressed prompt</h2>
+            <div class="pane-actions">
+              <button id="copy-btn" class="btn btn-small btn-accent" type="button" disabled>Copy compressed prompt</button>
+            </div>
+          </div>
+          <textarea id="output" readonly spellcheck="false" placeholder="Your compressed prompt appears here"></textarea>
+          <div id="diff-view" class="diff" tabindex="0" aria-label="Diff of removed and kept words" hidden></div>
+          <p id="output-meta" class="small"></p>
+        </section>
+      </main>
+
+      <div class="actionbar">
+        <button id="compress-btn" class="btn btn-primary btn-lg" type="button">Compress prompt</button>
+        <p id="run-status" class="small" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
