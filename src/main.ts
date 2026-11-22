@@ -100,12 +100,15 @@ function loadSettings(): Settings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<Settings>;
+    const reduction = Number(parsed.reduction);
     return {
-      reduction: Math.min(80, Math.max(10, Number(parsed.reduction ?? DEFAULT_SETTINGS.reduction))),
+      reduction: Number.isFinite(reduction)
+        ? Math.min(80, Math.max(10, reduction))
+        : DEFAULT_SETTINGS.reduction,
       encoding: parsed.encoding === 'cl100k_base' ? 'cl100k_base' : 'o200k_base',
-      protect: parsed.protect ?? DEFAULT_SETTINGS.protect,
-      minifyJson: parsed.minifyJson ?? DEFAULT_SETTINGS.minifyJson,
-      diff: parsed.diff ?? DEFAULT_SETTINGS.diff,
+      protect: typeof parsed.protect === 'boolean' ? parsed.protect : DEFAULT_SETTINGS.protect,
+      minifyJson: typeof parsed.minifyJson === 'boolean' ? parsed.minifyJson : DEFAULT_SETTINGS.minifyJson,
+      diff: typeof parsed.diff === 'boolean' ? parsed.diff : DEFAULT_SETTINGS.diff,
       forceKeep: typeof parsed.forceKeep === 'string' ? parsed.forceKeep : DEFAULT_SETTINGS.forceKeep,
     };
   } catch {
