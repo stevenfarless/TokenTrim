@@ -1,6 +1,7 @@
 name: Regenerate dependency lockfile
 
 on:
+  workflow_dispatch:
   push:
     branches: [fix/workbox-security-dependencies]
   pull_request:
