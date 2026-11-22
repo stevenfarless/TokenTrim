@@ -209,7 +209,7 @@ function handleCrash(detail: string): void {
   setModelState('error');
   el.progressLabel.hidden = false;
   el.progressLabel.textContent = `The background worker stopped (${detail || 'it may have run out of memory'}). Close other tabs and tap Retry.`;
-  setRunStatus('');
+  setRunStatus(`The background worker stopped: ${detail || 'unknown worker error'}. Tap Retry download to try again.`, 'error');
   refreshCompressButton();
   recount();
 }
@@ -263,7 +263,7 @@ function handleMessage(msg: WorkerResponse): void {
       if (msg.id !== latestCompressId) break;
       busy = false;
       showResult(msg.output, msg.diff, msg.stats);
-      setRunStatus('Done.');
+      setRunStatus('Compression complete. Your shortened prompt is ready below.', 'success');
       refreshCompressButton();
       break;
     }
@@ -273,6 +273,7 @@ function handleMessage(msg: WorkerResponse): void {
         setModelState('error');
         el.progressLabel.hidden = false;
         el.progressLabel.textContent = `Could not load the model: ${msg.message}`;
+        setRunStatus(`Model initialization failed: ${msg.message}`, 'error');
       } else if (msg.scope === 'compress') {
         if (msg.id !== latestCompressId) break;
         busy = false;
@@ -359,7 +360,7 @@ async function clearModel(): Promise<void> {
   busy = false;
   pendingCompress = false;
   setModelState('idle');
-  setRunStatus('Model removed.');
+  setRunStatus('Downloaded model removed from this device.', 'success');
   void refreshStorage();
   recount();
 }
@@ -676,7 +677,7 @@ async function boot(): Promise<void> {
     const detail = error instanceof Error ? error.message : String(error);
     el.progressLabel.hidden = false;
     el.progressLabel.textContent = `Could not start the background worker: ${detail}`;
-    setRunStatus('The model worker could not start. Tap Initialize to retry.');
+    setRunStatus('The model worker could not start. Tap Initialize / Download Offline Model to retry.', 'error');
   }
   modelCached = await detectCachedModel();
   if (modelState !== 'error') setModelState(modelCached ? 'cached' : 'idle');
@@ -685,5 +686,5 @@ async function boot(): Promise<void> {
 
 void boot().catch((error: unknown) => {
   const detail = error instanceof Error ? error.message : String(error);
-  setRunStatus(`Startup failed: ${detail}`);
+  setRunStatus(`App startup failed: ${detail}`, 'error');
 });
