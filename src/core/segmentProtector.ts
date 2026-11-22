@@ -43,9 +43,7 @@ function placeholder(index: number, prefix: string): string {
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\\]\\]/g, '\\function placeholder(index: number): string {
-  return `__SEG_${index}__`;
-}');
+  return value.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
 }
 
 function tryMinifyJson(source: string): string | null {
