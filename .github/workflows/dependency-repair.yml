@@ -1,47 +1,32 @@
-name: Regenerate dependency lockfile
+name: CI
 
 on:
-  workflow_dispatch:
   push:
-    branches: [fix/workbox-security-dependencies]
+    branches: [main, fix/workbox-security-dependencies]
   pull_request:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  regenerate-and-verify:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Regenerate lockfile
-        run: npm install --package-lock-only --ignore-scripts
-      - name: Commit regenerated lockfile
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- package-lock.json; then
-            git add package-lock.json
-            git commit -m "chore: regenerate patched dependency lockfile"
-            git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
-          fi
-      - name: Install exact lockfile
+      - name: Install locked dependencies
         run: npm ci
-      - name: Build and generate service worker
+      - name: Type-check
+        run: npm run typecheck
+      - name: Build production PWA
+        run: npm run build
+      - name: Verify generated PWA assets
         run: |
-          npm run build
           test -s dist/sw.js
           test -s dist/manifest.webmanifest
-      - name: Capture npm audit
-        run: npm audit --json > npm-audit.json || true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: npm-audit-report
-          path: npm-audit.json
+      - name: Audit all dependencies
+        run: npm audit --audit-level=low
