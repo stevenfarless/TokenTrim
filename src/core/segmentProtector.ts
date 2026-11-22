@@ -151,6 +151,6 @@ export function splitPieces(text: string, placeholderPrefix: string): Piece[] {
 /** Puts the original segments back in place of their placeholders. */
 export function restoreSegments(text: string, segments: readonly string[], placeholderPrefix: string): string {
   if (segments.length === 0) return text;
-  const re = new RegExp(`${escapeRegExp(placeholderPrefix)}(\\d+)__`, 'g');
+  const re = new RegExp(`${placeholderPrefix}(\\d+)__`, 'g');
   return text.replace(re, (match, index: string) => segments[Number(index)] ?? match);
 }
