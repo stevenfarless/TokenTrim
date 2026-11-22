@@ -29,7 +29,7 @@ git push -u origin main
 ```
 
 Then in the repo: **Settings > Pages > Build and deployment > Source: GitHub Actions**.
-Every push to `main` runs `.github/workflows/deploy.yml` and publishes `dist/`.
+Every push to `main` runs `.github/workflows/static.yml`. The workflow installs dependencies, builds the production app with Vite, verifies the generated PWA assets, and publishes `dist/`.
 
 ## Notes
 
